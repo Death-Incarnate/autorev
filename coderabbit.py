@@ -5,19 +5,44 @@ import subprocess
 import re
 
 
+def _ensure_main_branch(target_dir: str):
+    """Ensure a 'main' branch exists — CodeRabbit requires it."""
+    result = subprocess.run(
+        ["git", "branch", "--list", "main"],
+        capture_output=True, text=True, cwd=target_dir
+    )
+    if not result.stdout.strip():
+        # Get the current branch name
+        current = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, cwd=target_dir
+        ).stdout.strip()
+        if current and current != "main":
+            subprocess.run(
+                ["git", "branch", "main", current],
+                capture_output=True, cwd=target_dir
+            )
+
+
 def run_review(target_dir: str, base_commit: str = "HEAD~1") -> dict:
     """Run CodeRabbit review and return parsed findings."""
+    _ensure_main_branch(target_dir)
+
     try:
         result = subprocess.run(
             ["coderabbit", "review", "--base-commit", base_commit,
              "--agent", "--plain", "--cwd", target_dir, "--no-color"],
-            capture_output=True, text=True, timeout=120, cwd=target_dir
+            capture_output=True, text=True, timeout=180, cwd=target_dir
         )
         output = result.stdout + result.stderr
     except subprocess.TimeoutExpired:
-        return {"findings": [], "raw": "CodeRabbit timeout (120s)", "error": True}
+        return {"findings": [], "raw": "CodeRabbit timeout (180s)", "error": True}
     except FileNotFoundError:
         return {"findings": [], "raw": "CodeRabbit CLI not installed", "error": True}
+
+    # Check for rate limiting
+    if "Rate limit exceeded" in output:
+        return {"findings": [], "raw": output, "error": True, "rate_limited": True}
 
     findings = parse_findings(output)
     return {"findings": findings, "raw": output, "error": False}

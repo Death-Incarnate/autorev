@@ -101,13 +101,35 @@ def run_loop(config: dict):
     print(f"  History:  {len(history)} previous rounds")
     print()
 
-    # Baseline: run functional eval + CodeRabbit on full repo (first commit as base)
+    # Baseline: ensure repo has an empty root commit for diffing, then score full codebase
     print("  Scoring baseline...")
-    # Find the root commit to diff the entire repo for baseline quality
     import subprocess as _sp
+
+    # Check commit count
+    commit_count = _sp.run(["git", "rev-list", "--count", "HEAD"],
+                           capture_output=True, text=True, cwd=target)
+    count = int(commit_count.stdout.strip()) if commit_count.stdout.strip() else 0
+
+    if count <= 1:
+        # Only 1 commit — create an empty root so we can diff the full codebase
+        # Use git rebase to insert an empty commit at the beginning
+        _sp.run(["git", "stash"], capture_output=True, cwd=target)
+        root_hash = _sp.run(
+            ["git", "commit-tree", "-m", "autorev: empty root",
+             _sp.run(["git", "hash-object", "-t", "tree", "/dev/null"],
+                     capture_output=True, text=True).stdout.strip()],
+            capture_output=True, text=True, cwd=target
+        ).stdout.strip()
+        if root_hash:
+            _sp.run(["git", "rebase", "--onto", root_hash, "--root"],
+                    capture_output=True, cwd=target)
+        _sp.run(["git", "stash", "pop"], capture_output=True, cwd=target)
+
+    # Find root commit
     root_result = _sp.run(["git", "rev-list", "--max-parents=0", "HEAD"],
                           capture_output=True, text=True, cwd=target)
-    root_commit = root_result.stdout.strip().splitlines()[0] if root_result.stdout.strip() else "HEAD"
+    root_commit = root_result.stdout.strip().splitlines()[0] if root_result.stdout.strip() else "HEAD~1"
+
     baseline = evaluate(target, config["evaluate_cmd"], root_commit, config["weights"])
     print_score(baseline)
     best_composite = baseline["composite"]
