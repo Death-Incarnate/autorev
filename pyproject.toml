@@ -1,0 +1,16 @@
+[project]
+name = "autorev"
+version = "0.1.0"
+description = "Multi-signal code evolution — autoresearch + CodeRabbit quality gates"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [{name = "Chris Schwieters", email = "deadmanposts@gmail.com"}]
+keywords = ["autoresearch", "code-review", "coderabbit", "ai", "code-evolution"]
+
+[project.urls]
+Homepage = "https://github.com/Death-Incarnate/autorev"
+Repository = "https://github.com/Death-Incarnate/autorev"
+
+[project.scripts]
+autorev = "autorev:main"
