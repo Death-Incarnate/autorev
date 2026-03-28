@@ -60,32 +60,49 @@ Return ONLY the JSON object, no markdown, no explanation."""
     return response
 
 
+def _extract_json(text: str) -> dict | None:
+    """Extract a JSON object from LLM output, handling markdown, thinking tags, etc."""
+    import re
+    # Strip thinking tags
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<reasoning>.*?</reasoning>', '', text, flags=re.DOTALL)
+
+    # Try direct parse
+    try:
+        return json.loads(text.strip())
+    except json.JSONDecodeError:
+        pass
+
+    # Try markdown code blocks
+    for match in re.finditer(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL):
+        try:
+            return json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+
+    # Try to find balanced braces containing "description"
+    for i, ch in enumerate(text):
+        if ch == '{' and '"description"' in text[i:i+500]:
+            depth = 0
+            for j in range(i, len(text)):
+                if text[j] == '{':
+                    depth += 1
+                elif text[j] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[i:j+1])
+                        except json.JSONDecodeError:
+                            break
+    return None
+
+
 def apply_change(target_dir: str, change_json: str) -> bool:
     """Parse and apply the proposed change to the codebase."""
-    try:
-        change = json.loads(change_json)
-    except json.JSONDecodeError:
-        # Try to extract JSON from markdown code blocks
-        import re
-        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', change_json, re.DOTALL)
-        if match:
-            try:
-                change = json.loads(match.group(1))
-            except json.JSONDecodeError:
-                print("  Failed to parse change JSON")
-                return False
-        else:
-            # Try to find raw JSON
-            match = re.search(r'\{[^{}]*"description"[^{}]*"files"[^{}]*\[.*?\]\s*\}', change_json, re.DOTALL)
-            if match:
-                try:
-                    change = json.loads(match.group(0))
-                except json.JSONDecodeError:
-                    print("  Failed to parse change JSON")
-                    return False
-            else:
-                print("  Failed to parse change JSON")
-                return False
+    change = _extract_json(change_json)
+    if not change:
+        print("  Failed to parse change JSON")
+        return False
 
     files = change.get("files", [])
     if not files:
