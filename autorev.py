@@ -101,9 +101,14 @@ def run_loop(config: dict):
     print(f"  History:  {len(history)} previous rounds")
     print()
 
-    # Baseline score
+    # Baseline: run functional eval + CodeRabbit on full repo (first commit as base)
     print("  Scoring baseline...")
-    baseline = evaluate(target, config["evaluate_cmd"], "HEAD", config["weights"])
+    # Find the root commit to diff the entire repo for baseline quality
+    import subprocess as _sp
+    root_result = _sp.run(["git", "rev-list", "--max-parents=0", "HEAD"],
+                          capture_output=True, text=True, cwd=target)
+    root_commit = root_result.stdout.strip().splitlines()[0] if root_result.stdout.strip() else "HEAD"
+    baseline = evaluate(target, config["evaluate_cmd"], root_commit, config["weights"])
     print_score(baseline)
     best_composite = baseline["composite"]
 
